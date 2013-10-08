@@ -7,34 +7,34 @@
 
 
 // Pins
-const int GOGGLES_PIN = 0;
-const int BUTTON_PIN = 1;
-const int BUZZER_PIN = 2;
+const byte GOGGLES_PIN = 0;
+const byte BUTTON_PIN = 1;
+const byte BUZZER_PIN = 2;
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(32, GOGGLES_PIN, NEO_GRB + NEO_KHZ800);
 
 
-const byte MAX_EFFECT_REPEATS = 4;
-byte effect_counter = 0;
-long last_effect = 0;
+byte maxEffectRepeats = getEffectRepeats();
+byte effectCounter = 0;
+unsigned long lastEffect = 0; // The last time an effect happened
 
 // ROTATE vars
 const byte ALT_ROTATE = 0;
-long rotate_delay = 600;
-byte show_remainder = 0;
+unsigned int rotateDelay = 600;
+byte showRemainder = 0;
 
 const byte ALTERNATE = 1;
 
 // ANGRY vars
 const byte ANGRY = 10;
-long angry_delay = 1000;
-unsigned int color_counter = 0;
+unsigned int angryDelay = 1000;
+unsigned int colorCounter = 0;
 
 // SWAP vars
 const byte SWAP = 2;
-long swap_delay = 100;
-byte swap_step = 0;
-byte swap_center = 0;
+unsigned int swapDelay = 100;
+byte swapStep = 0;
+byte swapCenter = 0;
 
 ///////////////
 /// Colors and Brightness
@@ -42,7 +42,7 @@ byte swap_center = 0;
 
 byte
   iBrightness[16],    // Brightness map -- eye colors get scaled by these
-  brightness   = 50, // Global brightness (0-255)
+  brightness   = 150, // Global brightness (0-255)
   effect = 2;
 
 byte
@@ -50,11 +50,11 @@ byte
 const byte COLORS[][3] = {  // Rainbow, thanks wikipedia!
       {255, 0, 0},
       {255, 127, 0}, 
-      {255, 255, 0},
+//      {255, 255, 0},
       {0, 255, 0},
       {0, 0, 255},
-      {75, 0, 130},
-      {143, 0, 255}
+      {75, 0, 130}
+//      {143, 0, 255}
                      };
 
 
@@ -77,15 +77,17 @@ void setup() {
   pixels.begin();
   pinMode(BUTTON_PIN, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  setColors(color_counter);
+  setColors(colorCounter);
+  effect = getRandomEffect();
 }
 
 void loop() {
   byte i;
   
-  if (effect_counter >= MAX_EFFECT_REPEATS) {
+  if (effectCounter >= maxEffectRepeats) {
     effect = getRandomEffect();
-    effect_counter = 0;
+    effectCounter = 0;
+    maxEffectRepeats = getEffectRepeats();
   }
   
   // Debounce!
@@ -101,11 +103,11 @@ void loop() {
       
       if (buttonState == HIGH) {
         effect = ANGRY;
-        last_effect = millis()+55;
+        lastEffect = millis()+55;
       } else {
         effect = getRandomEffect();
         // Reset the swap step because this can get interrupted
-        swap_step = 0;
+        swapStep = 0;
       }
     }
   }
@@ -116,22 +118,26 @@ void loop() {
 
   if ((effect == ALT_ROTATE) || (effect == ALTERNATE)) {
 
-    if ((millis() - last_effect) > rotate_delay) {
-        last_effect = millis();
+    if ((millis() - lastEffect) > rotateDelay) {
+        lastEffect = millis();
         // Reset after we've gone around once
-        if (show_remainder > 3) {
-          color_counter = getRandomColorIndex();
-          setColors(color_counter);
-          show_remainder = 0;
-          effect_counter++;
+        if (showRemainder > 3) {
+          showRemainder = 0;
+          colorCounter = getRandomColorIndex();
+          effectCounter++;
+          if (effectCounter < maxEffectRepeats) {
+            setColors(colorCounter);
+          } else {
+            return;
+          }
         }
         
         // Set everything dark on alternates
-        if (effect == ALTERNATE && show_remainder % 2 == 1) {
+        if (effect == ALTERNATE && showRemainder % 2 == 1) {
            memset(iBrightness, 0, sizeof(iBrightness));
         } else {  
           for (i=0; i<16; i++) {
-            if (i % 4 == show_remainder) {
+            if (i % 4 == showRemainder) {
               iBrightness[i] = brightness;
             } else {
               iBrightness[i] = 0;
@@ -140,43 +146,43 @@ void loop() {
         }
         
        drawEyes(pixels, iBrightness, iColor, true);
-       show_remainder++;
+       showRemainder++;
     }
 
   } else if (effect == SWAP) {
-    if ((millis() - last_effect) > swap_delay) {
-      last_effect = millis();
-      if (swap_step == 0) {
-        swap_center = random(0, 16);
-        color_counter = getRandomColorIndex();
-        setColors(color_counter);
-        // Set all to 0
-        memset(iBrightness, 0, sizeof(iBrightness));
-        // Set the center and the 3 pins on either side
-        for (i=0; i<4; i++) {
-          iBrightness[(swap_center + i) & 0x0F] = brightness;
-          iBrightness[(swap_center - i) & 0x0F] = brightness;
-        }
+    if ((millis() - lastEffect) > swapDelay) {
+      lastEffect = millis();
+      if (swapStep == 0) {
+          swapCenter = random(0, 16);
+          colorCounter = getRandomColorIndex();
+          setColors(colorCounter);
+          // Set all to 0
+          memset(iBrightness, 0, sizeof(iBrightness));
+          // Set the center and the 3 pins on either side
+          for (i=0; i<4; i++) {
+            iBrightness[(swapCenter + i) & 0x0F] = brightness;
+            iBrightness[(swapCenter - i) & 0x0F] = brightness;
+          }
       // Skip steps to hang out at 0 for longer
-      } else if (swap_step == 6) {
+      } else if (swapStep == 8) {
         // Swap the center
-        swapPixel(swap_center, (swap_center + 8) & 0x0F);
-      } else if (swap_step == 7) {
-        swapPixel((swap_center + 1) & 0x0F, (swap_center + 9) & 0x0F);
-        swapPixel((swap_center - 1) & 0x0F, (swap_center + 7) & 0x0F);    
-      } else if (swap_step == 8) {
-        swapPixel((swap_center + 2) & 0x0F, (swap_center + 10) & 0x0F);
-        swapPixel((swap_center - 2) & 0x0F, (swap_center + 6) & 0x0F);  
-      } else if (swap_step == 9) {
-        swapPixel((swap_center + 3) & 0x0F, (swap_center + 11) & 0x0F);
-        swapPixel((swap_center - 3) & 0x0F, (swap_center + 5) & 0x0F);  
+        swapPixel(swapCenter, (swapCenter + 8) & 0x0F);
+      } else if (swapStep == 9) {
+        swapPixel((swapCenter + 1) & 0x0F, (swapCenter + 9) & 0x0F);
+        swapPixel((swapCenter - 1) & 0x0F, (swapCenter + 7) & 0x0F);    
+      } else if (swapStep == 10) {
+        swapPixel((swapCenter + 2) & 0x0F, (swapCenter + 10) & 0x0F);
+        swapPixel((swapCenter - 2) & 0x0F, (swapCenter + 6) & 0x0F);  
+      } else if (swapStep == 11) {
+        swapPixel((swapCenter + 3) & 0x0F, (swapCenter + 11) & 0x0F);
+        swapPixel((swapCenter - 3) & 0x0F, (swapCenter + 5) & 0x0F);  
       }  // Skip step 6 to hang out here longer
       
       drawEyes(pixels, iBrightness, iColor, false);
-      swap_step++;
-      if (swap_step > 15) {
-        swap_step = 0;
-        effect_counter++;
+      swapStep++;
+      if (swapStep > 19) {
+        swapStep = 0;
+        effectCounter++;
       }
     }
     
@@ -194,8 +200,8 @@ void loop() {
     beep(BUZZER_PIN, 4000, 30);
     
     
-    if ((millis() - last_effect) > angry_delay) {
-      last_effect = millis();
+    if ((millis() - lastEffect) > angryDelay) {
+      lastEffect = millis();
       // Spin quickly around
       for (i=0; i<16; i++) {
         // Assume the color are all set already
@@ -213,6 +219,7 @@ void loop() {
 
 
 void drawEyes(Adafruit_NeoPixel pixels, byte iBrightness[], byte iColor[][3], boolean reflectBrightness) {
+    // Heavily based off of the Adafruit Goggles example
     byte i, r, g, b, a;
     // Merge iColor with iBrightness, issue to NeoPixels
     for(i=0; i<16; i++) {
@@ -246,9 +253,6 @@ void drawEyes(Adafruit_NeoPixel pixels, byte iBrightness[], byte iColor[][3], bo
         b = (b * a) >> 8;
       }
       pixels.setPixelColor(16 + ((i + TOP_LED_SECOND) & 15), r, g, b);
-       // pgm_read_byte(&gamma8[r]),
-       // pgm_read_byte(&gamma8[g]),
-       // pgm_read_byte(&gamma8[b]));
     }
     pixels.show();
 }
@@ -268,11 +272,11 @@ void beep (unsigned char speakerPin, int frequencyInHertz, long timeInMillisecon
           }	 
 }
 
-void setColors(unsigned int color_counter) {
+void setColors(unsigned int colorCounter) {
   byte r, g, b, i;
-  r = COLORS[color_counter][0];
-  g = COLORS[color_counter][1];
-  b = COLORS[color_counter][2];
+  r = COLORS[colorCounter][0];
+  g = COLORS[colorCounter][1];
+  b = COLORS[colorCounter][2];
   for (i=0; i<16; i++) {
     iColor[i][0] = r; 
     iColor[i][1] = g; 
@@ -293,5 +297,9 @@ void swapPixel(byte fromPixel, byte toPixel) {
 
 byte getRandomEffect() {
   // Get random, non-angry effect
-  return random(0, 4);  // 0-3 are defined, increase this if you add another effect
+  return (byte) random(0, 3);  // 0-3 are defined, increase this if you add another effect
+}
+
+byte getEffectRepeats() {
+  return (byte) random(1, 5);
 }
