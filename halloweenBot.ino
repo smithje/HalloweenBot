@@ -1,7 +1,5 @@
 #include <Adafruit_NeoPixel.h>
 
-#define PIN            0
-
 #define TOP_LED_FIRST  0 // Change these if the first pixel is not
 #define TOP_LED_SECOND 0 // at the top of the first and/or second ring.
 
@@ -28,7 +26,6 @@ const byte ALTERNATE = 1;
 // ANGRY vars
 const byte ANGRY = 10;
 unsigned int angryDelay = 1000;
-unsigned int colorCounter = 0;
 
 // SWAP vars
 const byte SWAP = 2;
@@ -42,7 +39,7 @@ byte swapCenter = 0;
 
 byte
   iBrightness[16],    // Brightness map -- eye colors get scaled by these
-  brightness   = 150, // Global brightness (0-255)
+  brightness   = 200, // Global brightness (0-255)
   effect = 2;
 
 byte
@@ -50,10 +47,13 @@ byte
 const byte COLORS[][3] = {  // Rainbow, thanks wikipedia!
       {255, 0, 0},
       {255, 127, 0}, 
-//      {255, 255, 0},
+      {255, 255, 0},
       {0, 255, 0},
       {0, 0, 255},
-      {75, 0, 130}
+      {0, 255, 255}, //Aqua
+      {255, 0, 255}, //Purple
+      {127, 255, 0} //Chartreuse
+      
 //      {143, 0, 255}
                      };
 
@@ -75,9 +75,9 @@ long debounceDelay = 50;
 
 void setup() {
   pixels.begin();
-  pinMode(BUTTON_PIN, INPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
-  setColors(colorCounter);
+  setRandomColor();
   effect = getRandomEffect();
 }
 
@@ -101,7 +101,7 @@ void loop() {
     if (reading != buttonState) { //It has changed
       buttonState = reading;
       
-      if (buttonState == HIGH) {
+      if (buttonState == LOW) {
         effect = ANGRY;
         lastEffect = millis()+55;
       } else {
@@ -119,18 +119,23 @@ void loop() {
   if ((effect == ALT_ROTATE) || (effect == ALTERNATE)) {
 
     if ((millis() - lastEffect) > rotateDelay) {
-        lastEffect = millis();
+
         // Reset after we've gone around once
         if (showRemainder > 3) {
           showRemainder = 0;
-          colorCounter = getRandomColorIndex();
           effectCounter++;
           if (effectCounter < maxEffectRepeats) {
-            setColors(colorCounter);
+            if (random(0,4) == 0) { // 25% chance of craziness!
+              setRandomColors();
+            } else {
+              setRandomColor();
+            }
           } else {
             return;
           }
         }
+        
+        lastEffect = millis();
         
         // Set everything dark on alternates
         if (effect == ALTERNATE && showRemainder % 2 == 1) {
@@ -154,8 +159,7 @@ void loop() {
       lastEffect = millis();
       if (swapStep == 0) {
           swapCenter = random(0, 16);
-          colorCounter = getRandomColorIndex();
-          setColors(colorCounter);
+          setRandomColor();
           // Set all to 0
           memset(iBrightness, 0, sizeof(iBrightness));
           // Set the center and the 3 pins on either side
@@ -166,17 +170,14 @@ void loop() {
       // Skip steps to hang out at 0 for longer
       } else if (swapStep == 8) {
         // Swap the center
-        swapPixel(swapCenter, (swapCenter + 8) & 0x0F);
+        swapOffset(0);
       } else if (swapStep == 9) {
-        swapPixel((swapCenter + 1) & 0x0F, (swapCenter + 9) & 0x0F);
-        swapPixel((swapCenter - 1) & 0x0F, (swapCenter + 7) & 0x0F);    
+        swapOffset(1);  
       } else if (swapStep == 10) {
-        swapPixel((swapCenter + 2) & 0x0F, (swapCenter + 10) & 0x0F);
-        swapPixel((swapCenter - 2) & 0x0F, (swapCenter + 6) & 0x0F);  
+        swapOffset(2);  
       } else if (swapStep == 11) {
-        swapPixel((swapCenter + 3) & 0x0F, (swapCenter + 11) & 0x0F);
-        swapPixel((swapCenter - 3) & 0x0F, (swapCenter + 5) & 0x0F);  
-      }  // Skip step 6 to hang out here longer
+        swapOffset(3);
+      }  // Skip steps to hang out here longer
       
       drawEyes(pixels, iBrightness, iColor, false);
       swapStep++;
@@ -234,18 +235,16 @@ void drawEyes(Adafruit_NeoPixel pixels, byte iBrightness[], byte iColor[][3], bo
         b = (b * a) >> 8;
       }
       pixels.setPixelColor(((i + TOP_LED_FIRST) & 15), r, g, b);
-       // pgm_read_byte(&gamma8[r]), // Gamma correct and set pixel
-       // pgm_read_byte(&gamma8[g]),
-       // pgm_read_byte(&gamma8[b]));
-  
-      // Second eye uses the same colors, but reflected horizontally.
-      r = iColor[15 - i][0];
-      g = iColor[15 - i][1];
-      b = iColor[15 - i][2];
+     
+     
+      // Second eye 
+      r = iColor[i][0];            // Initial background RGB color
+      g = iColor[i][1];
+      b = iColor[i][2];
       
       // Optionally, reflect the brightness
       if (reflectBrightness == true) {
-        a = iBrightness[15-i] + 1;
+        a = iBrightness[(16-i) & 0x0F] + 1;
       }
       if(a) {
         r = (r * a) >> 8;
@@ -272,15 +271,28 @@ void beep (unsigned char speakerPin, int frequencyInHertz, long timeInMillisecon
           }	 
 }
 
-void setColors(unsigned int colorCounter) {
-  byte r, g, b, i;
-  r = COLORS[colorCounter][0];
-  g = COLORS[colorCounter][1];
-  b = COLORS[colorCounter][2];
+void setRandomColor() {
+  // Set all to one random color
+  byte r, g, b, i, colorIndex;
+  colorIndex = getRandomColorIndex();
+  r = COLORS[colorIndex][0];
+  g = COLORS[colorIndex][1];
+  b = COLORS[colorIndex][2];
   for (i=0; i<16; i++) {
     iColor[i][0] = r; 
     iColor[i][1] = g; 
     iColor[i][2] = b;
+  }
+}
+
+void setRandomColors() {
+  // set each pixel to a random color
+  byte i, colorIndex;
+  for (i=0; i<16; i++) {
+    colorIndex = getRandomColorIndex();
+    iColor[i][0] = COLORS[colorIndex][0];
+    iColor[i][1] = COLORS[colorIndex][1];
+    iColor[i][2] = COLORS[colorIndex][2];
   }
 }
 
@@ -295,6 +307,12 @@ void swapPixel(byte fromPixel, byte toPixel) {
   iBrightness[toPixel] = brightness;
 }
 
+void swapOffset(byte offset) {
+  // We swap on either side of the center, offset by the offset argument 
+  swapPixel((swapCenter + offset) & 0x0F, (swapCenter + 8 + offset) & 0x0F);
+  swapPixel((swapCenter - offset) & 0x0F, (swapCenter + 8 - offset) & 0x0F);
+}
+  
 byte getRandomEffect() {
   // Get random, non-angry effect
   return (byte) random(0, 3);  // 0-3 are defined, increase this if you add another effect
