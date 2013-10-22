@@ -11,10 +11,9 @@ const byte BUZZER_PIN = 2;
 
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(32, GOGGLES_PIN, NEO_GRB + NEO_KHZ800);
 
-
 byte maxEffectRepeats = getEffectRepeats();
-byte effectCounter = 0;
-unsigned long lastEffect = 0; // The last time an effect happened
+byte effectRepeatCounter = 0;
+unsigned long lastEffectTime = 0; 
 
 // ROTATE vars
 const byte ALT_ROTATE = 0;
@@ -31,7 +30,11 @@ unsigned int angryDelay = 1000;
 const byte SWAP = 2;
 unsigned int swapDelay = 100;
 byte swapStep = 0;
-byte swapCenter = 0;
+byte swapCenterPixel = 0;
+
+
+//SPIN vars
+const byte SPIN = 3;
 
 ///////////////
 /// Colors and Brightness
@@ -51,11 +54,9 @@ const byte COLORS[][3] = {  // Rainbow, thanks wikipedia!
       {0, 255, 0},
       {0, 0, 255},
       {0, 255, 255}, //Aqua
-      {255, 0, 255}, //Purple
-      {127, 255, 0} //Chartreuse
-      
-//      {143, 0, 255}
-                     };
+      {255, 0, 255} //Purple
+//      {127, 255, 0} //Chartreuse
+    };
 
 
 /////////////////////
@@ -63,8 +64,8 @@ const byte COLORS[][3] = {  // Rainbow, thanks wikipedia!
 /////////////////////
 
 int
-  buttonState  =   LOW, // Initial button state
-  lastButtonState = LOW;
+  buttonState  =   HIGH, // Initial button state
+  lastButtonState = HIGH;
 
 long lastDebounceTime = 0;
 long debounceDelay = 50;
@@ -78,15 +79,14 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
   setRandomColor();
-  effect = getRandomEffect();
 }
 
 void loop() {
   byte i;
   
-  if (effectCounter >= maxEffectRepeats) {
+  if (effectRepeatCounter >= maxEffectRepeats) {
     effect = getRandomEffect();
-    effectCounter = 0;
+    effectRepeatCounter = 0;
     maxEffectRepeats = getEffectRepeats();
   }
   
@@ -103,7 +103,7 @@ void loop() {
       
       if (buttonState == LOW) {
         effect = ANGRY;
-        lastEffect = millis()+55;
+        lastEffectTime = millis()+55;
       } else {
         effect = getRandomEffect();
         // Reset the swap step because this can get interrupted
@@ -115,31 +115,41 @@ void loop() {
   lastButtonState = reading;
   // End debouncing
   
+  /*
+  ALT_ROTATE and ALTERNATE
+  
+  An alternating effect.
+  
+  There are actually two defined here, because they are so similar
+  
+  ALT_ROTATE lights up every 4th pixel and rotates the lit pixels
+  
+  ALTERNATE lights up every 4th pixel, then sets them all blank, then 
+  lights up every 4th pixel again, offset by two pixels.
+  
+  */
 
   if ((effect == ALT_ROTATE) || (effect == ALTERNATE)) {
 
-    if ((millis() - lastEffect) > rotateDelay) {
+    if ((millis() - lastEffectTime) > rotateDelay) {
 
         // Reset after we've gone around once
         if (showRemainder > 3) {
           showRemainder = 0;
-          effectCounter++;
-          if (effectCounter < maxEffectRepeats) {
-            if (random(0,4) == 0) { // 25% chance of craziness!
-              setRandomColors();
-            } else {
-              setRandomColor();
-            }
+          effectRepeatCounter++;
+          if (effectRepeatCounter < maxEffectRepeats) {
+            // Set the colors
+            chooseRandomColorer();
           } else {
             return;
           }
-        }
+    }
         
-        lastEffect = millis();
+        lastEffectTime = millis();
         
         // Set everything dark on alternates
         if (effect == ALTERNATE && showRemainder % 2 == 1) {
-           memset(iBrightness, 0, sizeof(iBrightness));
+           setBrightnessToZero();
         } else {  
           for (i=0; i<16; i++) {
             if (i % 4 == showRemainder) {
@@ -154,18 +164,26 @@ void loop() {
        showRemainder++;
     }
 
+  /*
+  SWAP
+  The swap effect is supposed to look like eyes looking one way then moving to the opposite side
+  
+  We light up seven pixels, then move them in pairs across to the opposite side.
+  
+  */
+
   } else if (effect == SWAP) {
-    if ((millis() - lastEffect) > swapDelay) {
-      lastEffect = millis();
+    if ((millis() - lastEffectTime) > swapDelay) {
+      lastEffectTime = millis();
       if (swapStep == 0) {
-          swapCenter = random(0, 16);
+          swapCenterPixel = random(0, 16);
           setRandomColor();
           // Set all to 0
-          memset(iBrightness, 0, sizeof(iBrightness));
+          setBrightnessToZero();
           // Set the center and the 3 pins on either side
           for (i=0; i<4; i++) {
-            iBrightness[(swapCenter + i) & 0x0F] = brightness;
-            iBrightness[(swapCenter - i) & 0x0F] = brightness;
+            iBrightness[(swapCenterPixel + i) & 0x0F] = brightness;
+            iBrightness[(swapCenterPixel - i) & 0x0F] = brightness;
           }
       // Skip steps to hang out at 0 for longer
       } else if (swapStep == 8) {
@@ -183,13 +201,33 @@ void loop() {
       swapStep++;
       if (swapStep > 19) {
         swapStep = 0;
-        effectCounter++;
+        effectRepeatCounter++;
       }
     }
     
+
+  /*
+  SPIN
+  Quickly spin around
+  */
+  
+  } else if (effect == SPIN) {
+    setRandomColor();
+    spin();
+    effectRepeatCounter++;
     
-
-
+    
+ 
+  /*
+  This is called when the button is pressed
+  repeat while button is pressed:
+    Turn everything red
+    sound the buzzer
+    spin()
+    
+  We can't spin and sound the buzzer at the same time, sorry.
+  */
+  
   } else if (effect == ANGRY) {
     // All red
     for (i=0; i<16; i++) {
@@ -201,16 +239,10 @@ void loop() {
     beep(BUZZER_PIN, 4000, 30);
     
     
-    if ((millis() - lastEffect) > angryDelay) {
-      lastEffect = millis();
+    if ((millis() - lastEffectTime) > angryDelay) {
+      lastEffectTime = millis();
       // Spin quickly around
-      for (i=0; i<16; i++) {
-        // Assume the color are all set already
-        memset(iBrightness, 0, sizeof(iBrightness));
-        iBrightness[i] = brightness;
-        drawEyes(pixels, iBrightness, iColor, true);
-        delay(20);
-      }
+      spin();
 
     }
   }
@@ -219,9 +251,26 @@ void loop() {
 }
 
 
+void setBrightnessToZero() {
+  // Set all brightnesses to zero
+  memset(iBrightness, 0, sizeof(iBrightness));
+}
+
+void spin() {
+  // Spin around quickly.  Set the colors before calling this
+  byte i;
+  for (i=0; i<16; i++) {
+    // set all brightness to 0
+    setBrightnessToZero();
+    iBrightness[i] = brightness;
+    drawEyes(pixels, iBrightness, iColor, true);
+    delay(20);
+  }
+}
+
 void drawEyes(Adafruit_NeoPixel pixels, byte iBrightness[], byte iColor[][3], boolean reflectBrightness) {
     // Heavily based off of the Adafruit Goggles example
-    byte i, r, g, b, a;
+    byte i, r, g, b, a, reflected_i;
     // Merge iColor with iBrightness, issue to NeoPixels
     for(i=0; i<16; i++) {
       a = iBrightness[i] + 1;
@@ -235,16 +284,19 @@ void drawEyes(Adafruit_NeoPixel pixels, byte iBrightness[], byte iColor[][3], bo
         b = (b * a) >> 8;
       }
       pixels.setPixelColor(((i + TOP_LED_FIRST) & 15), r, g, b);
-     
-     
+          
       // Second eye 
       r = iColor[i][0];            // Initial background RGB color
       g = iColor[i][1];
       b = iColor[i][2];
       
-      // Optionally, reflect the brightness
+      // Optionally, reflect the brightness and color
       if (reflectBrightness == true) {
-        a = iBrightness[(16-i) & 0x0F] + 1;
+        reflected_i = (16-i) & 0x0F;
+        a = iBrightness[reflected_i] + 1;
+        r = iColor[reflected_i][0];
+        g = iColor[reflected_i][1];
+        b = iColor[reflected_i][2];
       }
       if(a) {
         r = (r * a) >> 8;
@@ -271,28 +323,53 @@ void beep (unsigned char speakerPin, int frequencyInHertz, long timeInMillisecon
           }	 
 }
 
+
 void setRandomColor() {
-  // Set all to one random color
-  byte r, g, b, i, colorIndex;
+  // Set all pixels to the same random color
+  byte i, colorIndex;
   colorIndex = getRandomColorIndex();
-  r = COLORS[colorIndex][0];
-  g = COLORS[colorIndex][1];
-  b = COLORS[colorIndex][2];
   for (i=0; i<16; i++) {
-    iColor[i][0] = r; 
-    iColor[i][1] = g; 
-    iColor[i][2] = b;
+    iColor[i][0] = COLORS[colorIndex][0]; 
+    iColor[i][1] = COLORS[colorIndex][1]; 
+    iColor[i][2] = COLORS[colorIndex][2];
   }
 }
 
-void setRandomColors() {
-  // set each pixel to a random color
-  byte i, colorIndex;
+void setFourRandomColors() {
+    // Set every 4th pixel to the same random color
+    byte i, j, colorIndex;
+    for (i=0; i<4; i++) {
+      colorIndex = getRandomColorIndex();
+      for (j=0; j<4; j++) {
+        iColor[i + j*4][0] = COLORS[colorIndex][0];
+        iColor[i + j*4][1] = COLORS[colorIndex][1];
+        iColor[i + j*4][2] = COLORS[colorIndex][2];
+      }
+    }
+}
+
+void setAllRandomColors() {
+  // Set every pixel to a random color
+  // Currently unused, due to lack of space
+  byte i, j, colorIndex;
   for (i=0; i<16; i++) {
     colorIndex = getRandomColorIndex();
     iColor[i][0] = COLORS[colorIndex][0];
     iColor[i][1] = COLORS[colorIndex][1];
     iColor[i][2] = COLORS[colorIndex][2];
+  }
+
+}
+
+
+void chooseRandomColorer() {
+  // Choose a randomness level for use in setRandomColor
+  byte randomNumber = (byte) random(0, 2);
+  if (randomNumber == 0) {
+    // 50% chance of craziness
+    setFourRandomColors();
+  } else {
+    setRandomColor();
   }
 }
 
@@ -309,13 +386,13 @@ void swapPixel(byte fromPixel, byte toPixel) {
 
 void swapOffset(byte offset) {
   // We swap on either side of the center, offset by the offset argument 
-  swapPixel((swapCenter + offset) & 0x0F, (swapCenter + 8 + offset) & 0x0F);
-  swapPixel((swapCenter - offset) & 0x0F, (swapCenter + 8 - offset) & 0x0F);
+  swapPixel((swapCenterPixel + offset) & 0x0F, (swapCenterPixel + 8 + offset) & 0x0F);
+  swapPixel((swapCenterPixel - offset) & 0x0F, (swapCenterPixel + 8 - offset) & 0x0F);
 }
   
 byte getRandomEffect() {
   // Get random, non-angry effect
-  return (byte) random(0, 3);  // 0-3 are defined, increase this if you add another effect
+  return (byte) random(0, 4);  // 0-4 are defined, increase this if you add another effect
 }
 
 byte getEffectRepeats() {
