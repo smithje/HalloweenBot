@@ -1,3 +1,50 @@
+/*
+HalloweenBot
+AUTHOR: Jeremy Smith (jeremy@musicsmith.net)
+https://github.com/smithje/HalloweenBot
+
+
+This is a sketch for an Adafruit Trinket, used in a robot halloween costume.
+
+There are several things which should be attached:
+
+  - 2 neopixel rings.  The data input of one of them should connect to the GOGGLES_PIN
+on the trinket.  Use the data out pin of that ring to connect to the other ring.  It's 
+purely aesthetic whether the right one is connected first or the left one is connected first.
+
+  - A piezo buzzer on BUZZER_PIN
+  
+  - A button on BUTTON_PIN.  The button should be normally open and complete a circuit to ground
+when closed.  If you have a different kind of button, the code won't be too difficult to change.
+
+There are a few fairly simple effects defined in this sketch:
+
+  ALT_ROTATE 
+  lights up every 4th pixel and rotates the lit pixels
+  
+  ALTERNATE 
+  lights up every 4th pixel, then sets them all blank, then 
+  lights up every 4th pixel again, offset by two pixels.
+  
+  SWAP
+  The swap effect is supposed to look like eyes looking one way then moving to the 
+  opposite side.
+  
+  SPIN
+  Quickly spin around the circle
+
+
+In addition, when the button is pressed, the robot gets angry.  The lights turn red and the
+buzzer sounds, alternating with a spin effect with all lights red.
+
+
+If I had more space, I'd like to do some more intelligent stuff with the colors like make them more random or
+add more colors to the SWAP effect.
+
+
+*/
+
+
 #include <Adafruit_NeoPixel.h>
 
 #define TOP_LED_FIRST  0 // Change these if the first pixel is not
@@ -231,7 +278,7 @@ void loop() {
   } else if (effect == ANGRY) {
     // All red
     for (i=0; i<16; i++) {
-     iColor[i][0] = 255; iColor[i][1] = 0 ; iColor[i][2] = 0;
+     setPixelColor(i, 255, 0, 0);
      iBrightness[i] = brightness; 
     }   
     drawEyes(pixels, iBrightness, iColor, false);
@@ -329,21 +376,17 @@ void setRandomColor() {
   byte i, colorIndex;
   colorIndex = getRandomColorIndex();
   for (i=0; i<16; i++) {
-    iColor[i][0] = COLORS[colorIndex][0]; 
-    iColor[i][1] = COLORS[colorIndex][1]; 
-    iColor[i][2] = COLORS[colorIndex][2];
+    setPixelColorByIndex(i, colorIndex);
   }
 }
 
-void setFourRandomColors() {
-    // Set every 4th pixel to the same random color
+void setEightRandomColors() {
+    // Set every 8th pixel to the same random color
     byte i, j, colorIndex;
-    for (i=0; i<4; i++) {
+    for (i=0; i<8; i++) {
       colorIndex = getRandomColorIndex();
-      for (j=0; j<4; j++) {
-        iColor[i + j*4][0] = COLORS[colorIndex][0];
-        iColor[i + j*4][1] = COLORS[colorIndex][1];
-        iColor[i + j*4][2] = COLORS[colorIndex][2];
+      for (j=0; j<2; j++) {
+        setPixelColorByIndex(i + j*8, colorIndex);
       }
     }
 }
@@ -354,9 +397,7 @@ void setAllRandomColors() {
   byte i, j, colorIndex;
   for (i=0; i<16; i++) {
     colorIndex = getRandomColorIndex();
-    iColor[i][0] = COLORS[colorIndex][0];
-    iColor[i][1] = COLORS[colorIndex][1];
-    iColor[i][2] = COLORS[colorIndex][2];
+    setPixelColorByIndex(i, colorIndex);
   }
 
 }
@@ -367,7 +408,7 @@ void chooseRandomColorer() {
   byte randomNumber = (byte) random(0, 2);
   if (randomNumber == 0) {
     // 50% chance of craziness
-    setFourRandomColors();
+    setEightRandomColors();
   } else {
     setRandomColor();
   }
@@ -382,6 +423,17 @@ void swapPixel(byte fromPixel, byte toPixel) {
   // and toPixel brightness to brightness
   iBrightness[fromPixel] = 0;
   iBrightness[toPixel] = brightness;
+  //setPixelColor(toPixel, iColor[fromPixel][0], iColor[fromPixel][1], iColor[fromPixel][2]);
+}
+
+void setPixelColorByIndex(byte pixel, byte colorIndex) {
+  setPixelColor(pixel, COLORS[colorIndex][0], COLORS[colorIndex][1], COLORS[colorIndex][2]);
+}
+
+void setPixelColor(byte pixel, byte r, byte g, byte b) {
+  iColor[pixel][0] = r;
+  iColor[pixel][1] = g;
+  iColor[pixel][2] = b;
 }
 
 void swapOffset(byte offset) {
